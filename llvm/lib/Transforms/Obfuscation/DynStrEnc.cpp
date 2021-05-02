@@ -33,7 +33,7 @@ StringRef DynStrEnc::name() {
     return "obf-dse";
 }
 
-Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction& insert_point, GetElementPtrConstantExpr* gepce) {
+Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_point, GetElementPtrConstantExpr* gepce) {
     encrypted_count++;
     GlobalVariable* orig_str = cstrings.find(gepce->getOperandUse(0).getUser())->second;
     ConstantDataArray* orig_str_data = cast<ConstantDataArray>(orig_str->getInitializer());
@@ -55,7 +55,7 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction& insert_poin
     std::shuffle(random_raw_list.begin(), random_raw_list.end(), std::default_random_engine(0));  // FIXME: specify seed
 
     // write trash
-    IRBuilder<> IRB(&insert_point);
+    IRBuilder<> IRB(insert_point);
     AllocaInst* AI = IRB.CreateAlloca(orig_str_data->getType());
     for(auto it: random_raw_list) {
         Value* data_ptr = IRB.CreateGEP(AI, SmallVector<Value*, 2>{
@@ -173,7 +173,11 @@ PreservedAnalyses DynStrEnc::run(Module &M, ModuleAnalysisManager &AM) {
                     Value* v = I.getOperand(i);
                     GetElementPtrConstantExpr* gepce = dyn_cast<GetElementPtrConstantExpr>(v);
                     if (gepce && cstrings.find(gepce->getOperandUse(0).getUser()) != cstrings.end()) {
-                        replacement_cstr = insertStrCode(M, F, I, gepce);
+                        Instruction* insert_point = &I;
+                        if (PHINode* phi = dyn_cast<PHINode>(&I)) {
+                            insert_point = phi->getIncomingBlock(i)->getTerminator();
+                        }
+                        replacement_cstr = insertStrCode(M, F, insert_point, gepce);
                         I.setOperand(i, replacement_cstr);
                     }
                 }

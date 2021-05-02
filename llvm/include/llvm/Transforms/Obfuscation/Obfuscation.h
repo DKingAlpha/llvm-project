@@ -15,7 +15,7 @@ namespace llvm {
     private:
         int encrypted_count = 0;
         std::map<User*, GlobalVariable*> cstrings;
-        Value* insertStrCode(Module& M, Function& F, Instruction& insert_point, GetElementPtrConstantExpr* gepce);
+        Value* insertStrCode(Module& M, Function& F, Instruction* insert_point, GetElementPtrConstantExpr* gepce);
 
     };
 
