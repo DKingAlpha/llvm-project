@@ -6,7 +6,7 @@ Check implementation: [DynStrEnc.cpp](llvm/lib/Transforms/Obfuscation/DynStrEnc.
 # Usage
 use clang with command-line argument `-mllvm -obf-dse`
 
-cstrings will be encrypted.
+strings in source code will be encrypted.
 
 # Example
 ![img 1](llvm/docs/Obfuscation/obf-dse-1.png)

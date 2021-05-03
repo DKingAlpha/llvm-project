@@ -13,6 +13,7 @@
 using namespace llvm;
 
 cl::opt<bool> EnableDSE("obf-dse", cl::desc("enable dynamic string encryption"), cl::init(false));
+cl::opt<bool> EnableDSEShuffle("obf-dse-shuffle", cl::desc("enable shuffle write in dynamic string encryption"), cl::init(true));
 
 static struct SplittedElem {
     int id;
@@ -37,7 +38,7 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_poin
     encrypted_count++;
     GlobalVariable* orig_str = cstrings.find(gepce->getOperandUse(0).getUser())->second;
     ConstantDataArray* orig_str_data = cast<ConstantDataArray>(orig_str->getInitializer());
-    StringRef orig_raw = orig_str_data->getAsString();   // with trailing 0
+    StringRef orig_raw = orig_str_data->getRawDataValues();   // with trailing 0
     int orig_raw_len = orig_raw.size();
 
     // generate trash
@@ -52,13 +53,16 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_poin
         random_raw_list.push_back({i, random_size, random_raw+i});
         i+=random_size;
     }
-    std::shuffle(random_raw_list.begin(), random_raw_list.end(), std::default_random_engine(0));  // FIXME: specify seed
+
+    if (EnableDSEShuffle)
+        std::shuffle(random_raw_list.begin(), random_raw_list.end(), std::default_random_engine(0));  // FIXME: specify seed
 
     // write trash
     IRBuilder<> IRB(insert_point);
     AllocaInst* AI = IRB.CreateAlloca(orig_str_data->getType());
+    Value* AI8 = IRB.CreateBitCast(AI, ArrayType::get(Type::getInt8Ty(IRB.getContext()), orig_raw_len)->getPointerTo());
     for(auto it: random_raw_list) {
-        Value* data_ptr = IRB.CreateGEP(AI, SmallVector<Value*, 2>{
+        Value* data_ptr = IRB.CreateGEP(AI8, SmallVector<Value*, 2>{
             ConstantInt::get(Type::getInt32Ty(IRB.getContext()), 0),
             ConstantInt::get(Type::getInt32Ty(IRB.getContext()), it.id)
         });
@@ -81,7 +85,9 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_poin
         decrypt_list.push_back({i, decrypt_size, orig_raw.data()+i});
         i+=decrypt_size;
     }
-    std::shuffle(decrypt_list.begin(), decrypt_list.end(), std::default_random_engine(0));  // FIXME: specify seed
+
+    if (EnableDSEShuffle)
+        std::shuffle(decrypt_list.begin(), decrypt_list.end(), std::default_random_engine(0));  // FIXME: specify seed
 
     // decrypt trash to original data
     for (auto it : decrypt_list) {
@@ -90,7 +96,7 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_poin
             int##SIZE##_t data_a = *((int##SIZE##_t*)(random_raw+it.id));                           \
             int##SIZE##_t data_b = *((int##SIZE##_t*)(it.ptr));                                     \
             /* convert data_a to data_b  */                                                         \
-            Value* gep_a = IRB.CreateGEP(AI, SmallVector<Value*, 2>{                                \
+            Value* gep_a = IRB.CreateGEP(AI8, SmallVector<Value*, 2>{                                \
                 ConstantInt::get(Type::getInt32Ty(IRB.getContext()), 0),                            \
                 ConstantInt::get(Type::getInt32Ty(IRB.getContext()), it.id)                         \
             });                                                                                     \
@@ -127,6 +133,21 @@ Value* DynStrEnc::insertStrCode(Module& M, Function& F, Instruction* insert_poin
     return gep;
 }
 
+static bool isCStringOrWString(ConstantDataSequential* c) {
+  // wchar_t is 16-bits on windows, 32-bits on *nix (according to wikipedia)
+  if (!c->isString(8) && !c->isString(16) && !c->isString(32))
+    return false;
+
+  StringRef Str = c->getRawDataValues();
+
+  // The last value must be nul.
+  if (Str.back() != 0) return false;
+
+  // wstring might contain \x00.
+  return true;
+}
+
+
 PreservedAnalyses DynStrEnc::run(Module &M, ModuleAnalysisManager &AM) {
     if (!EnableDSE)
         return PreservedAnalyses::all();;
@@ -141,7 +162,7 @@ PreservedAnalyses DynStrEnc::run(Module &M, ModuleAnalysisManager &AM) {
         if (!init->hasOneUse()) { continue; }
         ConstantDataArray* data = dyn_cast<ConstantDataArray>(init);
         if (!data) continue;
-        if (!data->isCString()) continue;
+        if (!isCStringOrWString(data)) continue;
         for (auto U : gv.users()) {
             cstrings[U] = &gv;
             dbgs() << "adding " << demangle(std::string(gv.getName())) << "\n";
