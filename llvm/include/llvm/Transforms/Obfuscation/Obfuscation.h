@@ -19,10 +19,19 @@ namespace llvm {
 
     };
 
+    class FunctionCrusher : public PassInfoMixin<FunctionCrusher> {
+    public:
+        static StringRef name();
+        PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
+    private:
+        void crushBB(Module& M, Function& F, BasicBlock& BB);
+        void dispatchBB(Module& M, Function& F);
+    };
 
     void inline injectObfuscationPasses(PassBuilder& pb) {
         pb.registerPipelineStartEPCallback([](ModulePassManager& MPM, PassBuilder::OptimizationLevel level) {
             MPM.addPass(DynStrEnc());
+            MPM.addPass(FunctionCrusher());
         });
         
     }

@@ -12,8 +12,8 @@
 
 using namespace llvm;
 
-cl::opt<bool> EnableDSE("obf-dse", cl::desc("enable dynamic string encryption"), cl::init(false));
-cl::opt<bool> EnableDSEShuffle("obf-dse-shuffle", cl::desc("enable shuffle write in dynamic string encryption"), cl::init(true));
+cl::opt<bool> EnableDSE("obf-dse", cl::desc("Obfuscation: enable dynamic string encryption"), cl::init(false));
+cl::opt<bool> EnableDSEShuffle("obf-dse-shuffle", cl::desc("Obfuscation: enable shuffle write in dynamic string encryption"), cl::init(true));
 
 static struct SplittedElem {
     int id;
@@ -150,7 +150,7 @@ static bool isCStringOrWString(ConstantDataSequential* c) {
 
 PreservedAnalyses DynStrEnc::run(Module &M, ModuleAnalysisManager &AM) {
     if (!EnableDSE)
-        return PreservedAnalyses::all();;
+        return PreservedAnalyses::all();
 
     encrypted_count = 0;
     cstrings.clear();
